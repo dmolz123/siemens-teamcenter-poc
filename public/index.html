@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TC ↔ Bluebeam Studio — Integration PoC</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d0f14;
+    --surface: #13161e;
+    --surface2: #1a1e29;
+    --border: #252a38;
+    --accent: #4f8ef7;
+    --accent2: #38d9a9;
+    --warn: #f7c94f;
+    --error: #f75f5f;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  header {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .header-left { display: flex; align-items: center; gap: 16px; }
+
+  .logo {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+
+  h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+
+  .status-badge {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    transition: all 0.3s;
+  }
+  .status-badge.active { color: var(--accent2); border-color: var(--accent2); background: rgba(56,217,169,0.08); }
+  .status-badge.error { color: var(--error); border-color: var(--error); background: rgba(247,95,95,0.08); }
+
+  /* LEFT PANEL — Steps */
+  .steps-panel {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    overflow-y: auto;
+  }
+
+  .panel-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 0 20px 12px;
+  }
+
+  .step-item {
+    padding: 14px 20px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .step-item:hover { background: var(--surface2); }
+  .step-item.active { border-left-color: var(--accent); background: rgba(79,142,247,0.06); }
+  .step-item.done { border-left-color: var(--accent2); }
+  .step-item.error-step { border-left-color: var(--error); }
+
+  .step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  .step-item.active .step-num { background: var(--accent); border-color: var(--accent); color: white; }
+  .step-item.done .step-num { background: var(--accent2); border-color: var(--accent2); color: #0d0f14; }
+  .step-item.error-step .step-num { background: var(--error); border-color: var(--error); color: white; }
+
+  .step-title { font-size: 13px; font-weight: 500; }
+  .step-sub { font-size: 11px; color: var(--muted); margin-left: 32px; }
+
+  .step-divider {
+    width: 1px; height: 12px;
+    background: var(--border);
+    margin: 0 0 0 30px;
+  }
+
+  .run-btn {
+    display: block;
+    margin: 6px 20px 0;
+    padding: 7px 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: calc(100% - 40px);
+  }
+  .run-btn:hover { background: #6aa3f9; }
+  .run-btn:disabled { background: var(--surface2); color: var(--muted); cursor: not-allowed; }
+  .run-btn.loading { background: var(--warn); color: #0d0f14; }
+
+  /* RIGHT PANEL */
+  .main-panel {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+
+  /* TC Stub card */
+  .tc-stub {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    gap: 32px;
+    align-items: center;
+  }
+
+  .stub-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 3px; }
+  .stub-val { font-family: var(--mono); font-size: 12px; color: var(--text); }
+  .stub-val.highlight { color: var(--accent); }
+
+  .content-area {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+  }
+
+  /* State panel */
+  .state-panel {
+    border-right: 1px solid var(--border);
+    padding: 20px 24px;
+    overflow-y: auto;
+  }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .state-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .state-card {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .state-card-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+  .state-card-val {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+  }
+  .state-card-val.none { color: var(--muted); font-style: italic; }
+  .state-card-val.ok { color: var(--accent2); }
+
+  /* Webhook events */
+  .webhook-list { display: flex; flex-direction: column; gap: 8px; }
+  .webhook-event {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    animation: slideIn 0.3s ease;
+  }
+  .webhook-time { color: var(--muted); margin-bottom: 3px; }
+
+  /* Log panel */
+  .log-panel {
+    padding: 20px 24px;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  .log-entries { display: flex; flex-direction: column; gap: 4px; }
+
+  .log-entry {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    gap: 10px;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    font-family: var(--mono);
+    font-size: 11px;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .log-time { color: var(--muted); }
+  .log-msg { color: var(--text); }
+  .log-msg.success { color: var(--accent2); }
+  .log-msg.error { color: var(--error); }
+  .log-msg.warn { color: var(--warn); }
+  .log-msg.webhook { color: var(--accent); }
+  .log-msg.info { color: var(--text); }
+
+  .empty-log {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 20px 0;
+  }
+
+  .reset-btn {
+    padding: 6px 14px;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .reset-btn:hover { color: var(--error); border-color: var(--error); }
+
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .spinning { animation: spin 1s linear infinite; display: inline-block; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  .download-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px 14px;
+    background: rgba(56,217,169,0.1);
+    border: 1px solid var(--accent2);
+    border-radius: 5px;
+    color: var(--accent2);
+    font-family: var(--mono);
+    font-size: 12px;
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .download-link:hover { background: rgba(56,217,169,0.2); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="logo">⚡</div>
+    <h1>TC ↔ Bluebeam Studio <span>/ Integration PoC</span></h1>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <span id="globalStatus" class="status-badge">IDLE</span>
+    <button class="reset-btn" onclick="resetPoc()">↺ Reset</button>
+  </div>
+</header>
+
+<!-- LEFT: Steps -->
+<aside class="steps-panel">
+  <div class="panel-label">Outbound Flow — TC → Studio</div>
+
+  <div class="step-item" id="step-trigger">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">TC Workflow Trigger</div>
+    </div>
+    <div class="step-sub">Checker-Major node activated</div>
+    <button class="run-btn" onclick="runStep('trigger')">▶ Simulate TC Event</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-create-session">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Create Studio Session</div>
+    </div>
+    <div class="step-sub">POST /publicapi/v1/sessions</div>
+    <button class="run-btn" onclick="runStep('create-session')">▶ Create Session</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-register-webhook">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">Register Webhook</div>
+    </div>
+    <div class="step-sub">POST /publicapi/v2/subscriptions</div>
+    <button class="run-btn" onclick="runStep('register-webhook')">▶ Register Webhook</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-upload-file">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Upload PDF (3-step)</div>
+    </div>
+    <div class="step-sub">Metadata → S3 → Confirm</div>
+    <button class="run-btn" onclick="runStep('upload-file')">▶ Upload Drawing</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-invite-reviewers">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Invite Reviewers</div>
+    </div>
+    <div class="step-sub">Resolved from TC workflow conditions</div>
+    <button class="run-btn" onclick="runStep('invite-reviewers')">▶ Invite Reviewers</button>
+  </div>
+
+  <div style="height:20px;"></div>
+  <div class="panel-label">Inbound Flow — Studio → TC</div>
+
+  <div class="step-item" id="step-finalize">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">Finalize Session</div>
+    </div>
+    <div class="step-sub">PUT Status: Finalizing</div>
+    <button class="run-btn" onclick="runStep('finalize')">▶ Finalize</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-snapshot">
+    <div class="step-header">
+      <div class="step-num">7</div>
+      <div class="step-title">Snapshot + Download</div>
+    </div>
+    <div class="step-sub">POST snapshot → poll → download PDF</div>
+    <button class="run-btn" onclick="runStep('snapshot')">▶ Get Marked-up PDF</button>
+  </div>
+  <div class="step-divider"></div>
+
+  <div class="step-item" id="step-cleanup">
+    <div class="step-header">
+      <div class="step-num">8</div>
+      <div class="step-title">Cleanup</div>
+    </div>
+    <div class="step-sub">Delete webhook + session</div>
+    <button class="run-btn" onclick="runStep('cleanup')">▶ Cleanup</button>
+  </div>
+</aside>
+
+<!-- RIGHT: State + Logs -->
+<main class="main-panel">
+
+  <!-- TC Stub banner -->
+  <div class="tc-stub">
+    <div>
+      <div class="stub-label">Change Request</div>
+      <div class="stub-val highlight" id="stubCr">CR-12345</div>
+    </div>
+    <div>
+      <div class="stub-label">Drawing</div>
+      <div class="stub-val" id="stubDrawing">—</div>
+    </div>
+    <div>
+      <div class="stub-label">Reviewer</div>
+      <div class="stub-val" id="stubReviewer">—</div>
+    </div>
+    <div>
+      <div class="stub-label">Workflow Node</div>
+      <div class="stub-val" id="stubNode">—</div>
+    </div>
+    <div>
+      <div class="stub-label">ETO Category</div>
+      <div class="stub-val" id="stubEto">—</div>
+    </div>
+  </div>
+
+  <div class="content-area">
+
+    <!-- State panel -->
+    <div class="state-panel">
+      <div class="section-title">Session State</div>
+      <div class="state-grid">
+        <div class="state-card">
+          <div class="state-card-label">Session ID</div>
+          <div class="state-card-val none" id="stateSessionId">none</div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-label">Subscription ID</div>
+          <div class="state-card-val none" id="stateSubId">none</div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-label">Files Uploaded</div>
+          <div class="state-card-val none" id="stateFiles">0</div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-label">Status</div>
+          <div class="state-card-val none" id="stateStatus">idle</div>
+        </div>
+      </div>
+
+      <div id="downloadSection" style="display:none; margin-bottom:20px;">
+        <div class="section-title">Output</div>
+        <a id="downloadLink" class="download-link" href="#" target="_blank">
+          ⬇ Download Reviewed PDF
+        </a>
+      </div>
+
+      <div class="section-title">Webhook Events</div>
+      <div class="webhook-list" id="webhookList">
+        <div style="color:var(--muted);font-family:var(--mono);font-size:11px;">Waiting for events...</div>
+      </div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="log-panel">
+      <div class="section-title">Middleware Log</div>
+      <div class="log-entries" id="logEntries">
+        <div class="empty-log">Run a step to see output...</div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+  let pollInterval = null;
+  const stepOrder = ['trigger','create-session','register-webhook','upload-file','invite-reviewers','finalize','snapshot','cleanup'];
+
+  async function runStep(step) {
+    const btn = document.querySelector(`#step-${step} .run-btn`);
+    if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = '⟳ Running...'; }
+
+    try {
+      const resp = await fetch(`/poc/${step}`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const data = await resp.json();
+
+      if (!resp.ok) throw new Error(data.error || 'Request failed');
+
+      // Mark step done
+      const stepEl = document.getElementById(`step-${step}`);
+      if (stepEl) { stepEl.classList.remove('active'); stepEl.classList.add('done'); }
+      const numEl = stepEl?.querySelector('.step-num');
+      if (numEl) numEl.textContent = '✓';
+
+      // Handle download link for snapshot
+      if (step === 'snapshot' && data.downloadPath) {
+        document.getElementById('downloadSection').style.display = 'block';
+        document.getElementById('downloadLink').href = data.downloadPath;
+      }
+
+    } catch (err) {
+      const stepEl = document.getElementById(`step-${step}`);
+      if (stepEl) stepEl.classList.add('error-step');
+    }
+
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = '▶ ' + btn.textContent.replace('⟳ Running...', '').replace('▶ ', ''); }
+    await refreshState();
+  }
+
+  async function resetPoc() {
+    await fetch('/poc/reset', { method: 'POST' });
+    stepOrder.forEach(s => {
+      const el = document.getElementById(`step-${s}`);
+      if (el) { el.classList.remove('done', 'active', 'error-step'); }
+      const num = el?.querySelector('.step-num');
+      if (num) num.textContent = stepOrder.indexOf(s) + 1;
+    });
+    document.getElementById('downloadSection').style.display = 'none';
+    await refreshState();
+  }
+
+  async function refreshState() {
+    try {
+      const resp = await fetch('/poc/state');
+      const data = await resp.json();
+
+      // Update status badge
+      const badge = document.getElementById('globalStatus');
+      badge.textContent = (data.status || 'idle').toUpperCase();
+      badge.className = 'status-badge';
+      if (['active','complete','done'].includes(data.status)) badge.classList.add('active');
+      if (data.status === 'error') badge.classList.add('error');
+
+      // TC stub
+      if (data.tcStub) {
+        document.getElementById('stubCr').textContent = data.tcStub.crNumber;
+        document.getElementById('stubDrawing').textContent = data.tcStub.drawings?.[0]?.name || '—';
+        document.getElementById('stubReviewer').textContent = data.tcStub.reviewers?.[0]?.email || '—';
+        document.getElementById('stubNode').textContent = data.tcStub.workflowNode || '—';
+        document.getElementById('stubEto').textContent = data.tcStub.isEtoCategory ? 'Yes' : 'No';
+      }
+
+      // State cards
+      const setVal = (id, val, isGood) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = val || 'none';
+        el.className = 'state-card-val' + (val ? (isGood ? ' ok' : '') : ' none');
+      };
+      setVal('stateSessionId', data.sessionId, true);
+      setVal('stateSubId', data.subscriptionId, true);
+      setVal('stateFiles', data.fileIds?.length || 0, data.fileIds?.length > 0);
+      setVal('stateStatus', data.status, ['active','complete'].includes(data.status));
+
+      // Log entries
+      const logEl = document.getElementById('logEntries');
+      if (data.log?.length) {
+        logEl.innerHTML = data.log.map(entry => {
+          const t = new Date(entry.time).toLocaleTimeString('en-US', { hour12: false });
+          return `<div class="log-entry">
+            <span class="log-time">${t}</span>
+            <span class="log-msg ${entry.type}">${escHtml(entry.msg)}</span>
+          </div>`;
+        }).join('');
+        logEl.scrollTop = logEl.scrollHeight;
+      } else {
+        logEl.innerHTML = '<div class="empty-log">Run a step to see output...</div>';
+      }
+
+      // Webhook events
+      const webhookEl = document.getElementById('webhookList');
+      if (data.webhookEvents?.length) {
+        webhookEl.innerHTML = data.webhookEvents.map(e => `
+          <div class="webhook-event">
+            <div class="webhook-time">${new Date(e.receivedAt).toLocaleTimeString()}</div>
+            <div>${escHtml(e.ResourceType || '')} — ${escHtml(e.EventType || '')} ${e.Name ? '/ ' + escHtml(e.Name) : ''}</div>
+          </div>`).join('');
+      }
+
+    } catch (err) {
+      console.error('State refresh failed:', err);
+    }
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // Poll state every 3 seconds
+  pollInterval = setInterval(refreshState, 3000);
+  refreshState();
+</script>
+</body>
+</html>
